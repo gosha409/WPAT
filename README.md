@@ -1,73 +1,63 @@
-
 # Windows Persistence Audit Tool
-Windows persistence audit tool based on persistence-info: https://persistence-info.github.io/
 
+A read-only PowerShell tool for auditing Windows persistence locations.
 
-Скрипт собирает артефакты закрепления, обогащает их файловыми метаданными, оценивает риск, группирует результаты по механизмам и формирует HTML/CSV-отчёты для triage.
+It is based on the excellent [`persistence-info`](https://persistence-info.github.io/) project and is meant to help with defensive checks, incident response, hardening reviews, and baseline monitoring.
 
-> Проект предназначен для defensive audit, incident response, hardening review и baseline-контроля. Скрипт ничего не создаёт, не изменяет и не удаляет.
-
----
-
-## Возможности
-
-- Проверка всех Windows persistence mechanisms из `persistence-info`.
-- Read-only режим: только сбор и анализ.
-- Группировка по конкретным механизмам:
-  - `Task Scheduler`
-  - `Windows Services`
-  - `IFilter`
-  - `Code Signing DLL`
-  - `Print Monitor`
-  - `Netsh extension DLL`
-  - `Authentication Packages`
-  - `Password Filter`
-  - и другие.
-- Отдельный CSV-файл на каждый механизм persistence.
-- Общий CSV со всеми находками.
-- Review queue для `Medium`, `High`, `Critical`.
-- HTML-отчёт со спойлерами:
-  - механизм persistence;
-  - внутри механизма — градация по риску;
-  - `Criticality logic` перед каждой категорией.
-- Обогащение файлов:
-  - `SHA256`
-  - `Authenticode Signature`
-  - `Signer`
-  - `FileOwner`
-  - `CreationTimeUtc`
-  - `LastWriteTimeUtc`
-  - `CompanyName`
-  - `ProductName`
-  - `OriginalFilename`
-  - `FileDescription`
-  - `ZoneId`
-  - `WritableByNonAdmin`
-- Контекстный resolver для относительных DLL/EXE:
-  - `localspl.dll`
-  - `tcpmon.dll`
-  - `scecli`
-  - `msv1_0`
-  - `ifmon.dll`
-  - и похожих значений из системных registry locations.
-- Coverage-файл по всем механизмам из `persistence-info`.
-- Более аккуратный scoring, чтобы не поднимать штатные Microsoft/System32 entries без дополнительных подозрительных признаков.
+The tool does not create, change, remove, disable, or remediate anything. It only collects evidence, enriches it, scores it, and writes reports.
 
 ---
 
-## Быстрый запуск
+## What this tool does
 
-Запускать лучше из elevated PowerShell.
+Windows has many legitimate places where software can register itself to start automatically, load a DLL, hook into a subsystem, or extend system behavior. Attackers can abuse the same places for persistence.
+
+This script walks through those locations and produces a practical audit report.
+
+It collects:
+
+- registry-based persistence entries;
+- scheduled tasks;
+- Windows services;
+- logon/startup locations;
+- LSA, Winlogon, Print Monitor, Netsh, AMSI and other extension points;
+- COM and shell extension related entries;
+- PowerShell profiles;
+- Windows Terminal profiles;
+- RDP-related startup settings;
+- DSC configuration state;
+- other persistence locations listed by `persistence-info`.
+
+For file-backed entries, it also tries to enrich the result with:
+
+- SHA256;
+- Authenticode signature status;
+- signer;
+- file owner;
+- timestamps;
+- company/product metadata;
+- original filename;
+- file description;
+- ZoneId;
+- writable-by-non-admin indicator.
+
+---
+
+## Quick start
+
+Run from an elevated PowerShell session:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\persistence_audit_tool.ps1 -OutputDirectory C:\Temp\pi-audit
 ```
 
+The output directory will contain raw results and a triage report.
+
 ---
 
-## Выходные файлы
+## Output structure
 
-После запуска в `C:\Temp\pi-audit` появятся raw-результаты и директория triage.
+Example output:
 
 ```text
 C:\Temp\pi-audit\
@@ -91,80 +81,71 @@ C:\Temp\pi-audit\
       21_Windows_Terminal_Profile.csv
 ```
 
-### Основные файлы
+The most useful file to open first is:
 
-| Файл | Назначение |
-|---|---|
-| `persistence-info-audit-*.csv` | Сырой inventory всех найденных артефактов |
-| `persistence-info-audit-*.json` | JSON-версия raw inventory |
-| `persistence-info-triage-all.csv` | Все находки с risk scoring и enrichment |
-| `persistence-info-triage-reviewqueue.csv` | Очередь на ручную проверку: `Medium`, `High`, `Critical` |
-| `persistence-info-triage-dangerous.csv` | Alias для совместимости, содержит те же review-строки |
-| `persistence-info-triage-summary.csv` | Сводка по механизмам и verdict |
-| `persistence-info-coverage.csv` | Покрытие механизмов из `persistence-info` |
-| `persistence-info-triage-highlighted.html` | Основной HTML-отчёт |
+```text
+persistence-info-triage-highlighted.html
+```
+
+It gives a grouped, collapsible view of the findings.
 
 ---
 
-## HTML-отчёт
+## Reports
 
-HTML-отчёт рассчитан на быстрый ручной triage.
+### HTML report
 
-Внутри отчёта:
+The HTML report is built for manual triage.
 
-- summary;
-- покрытие по всем persistence mechanisms;
-- Разделение на уровни риска
-  - `Critical`
-  - `High`
-  - `Medium`
-  - `Low`
-- перед каждой категорией есть описание `Логики оценки`;
-- таблицы имеют горизонтальную прокрутку;
-- ширину колонок можно менять мышкой.
+It includes:
+
+- a summary by mechanism and verdict;
+- coverage for all supported persistence mechanisms;
+- one collapsible section per persistence mechanism;
+- nested risk sections inside each mechanism:
+  - Critical
+  - High
+  - Medium
+  - Low
+
+### CSV reports
+
+| File | Purpose |
+|---|---|
+| `persistence-info-audit-*.csv` | Raw inventory. Useful for archival and diffing. |
+| `persistence-info-audit-*.json` | JSON version of the raw inventory. |
+| `persistence-info-triage-all.csv` | All findings with scoring, enrichment, and explanations. |
+| `persistence-info-triage-reviewqueue.csv` | Findings that should be reviewed first: Medium, High, Critical. |
+| `persistence-info-triage-dangerous.csv` | Compatibility alias for the review queue. |
+| `persistence-info-triage-summary.csv` | Count by mechanism and verdict. |
+| `persistence-info-coverage.csv` | Shows which persistence-info mechanisms are implemented and observed. |
+| `categories\*.csv` | One CSV per persistence mechanism. |
 
 ---
 
 ## Risk scoring
 
-Скрипт использует rule-based scoring. Он не пытается заменить EDR, SIEM или ручной анализ.
+The scoring is rule-based and intentionally explainable.
 
-На risk влияют:
+Each finding gets:
 
-- критичность persistence mechanism;
-- путь в user-writable location:
-  - `AppData`
-  - `Temp`
-  - `Downloads`
-  - `Desktop`
-  - `Public`
-  - `ProgramData`
-- unsigned или invalid signature;
-- нестандартный signer;
-- LOLBin/script host:
-  - `powershell.exe`
-  - `pwsh.exe`
-  - `cmd.exe /c`
-  - `mshta.exe`
-  - `rundll32.exe`
-  - `regsvr32.exe`
-  - `wscript.exe`
-  - `cscript.exe`
-  - `certutil.exe`
-  - `bitsadmin.exe`
-- признаки script/network retrieval:
-  - `-enc`
-  - `IEX`
-  - `DownloadString`
-  - `FromBase64String`
-  - `Invoke-WebRequest`
-  - `http://`
-  - `https://`
-- DLL/EXE вне ожидаемых системных директорий;
-- writable ACL на исполняемый файл;
-- hidden task при наличии дополнительного подозрительного сигнала.
+- `Score`
+- `Verdict`
+- `Reasons`
+- `RecommendedAction`
 
-Скрипт также снижает шум для штатных signed Microsoft components из:
+Verdicts:
+
+| Verdict | Meaning |
+|---|---|
+| `Critical` | Review immediately. Usually multiple strong suspicious signals. |
+| `High` | Prioritize. Often a suspicious path, signer, script host, or sensitive mechanism. |
+| `Medium` | Worth checking, but not necessarily malicious. |
+| `Low` | Usually baseline/inventory unless it changes later. |
+
+The script also tries to reduce noise from expected Microsoft components. Signed Microsoft files in expected system locations are usually downgraded unless other suspicious indicators are present.
+
+Expected system locations include:
 
 ```text
 C:\Windows\System32
@@ -173,24 +154,11 @@ C:\Windows\WinSxS
 C:\ProgramData\Microsoft\Windows Defender
 ```
 
-Это важно, потому что многие persistence locations легитимно используются самой Windows.
-
 ---
 
-## Verdict
+## Supported persistence mechanisms
 
-| Verdict | Значение |
-|---|---|
-| `Critical` | Высокий приоритет расследования. Есть несколько сильных подозрительных признаков. |
-| `High` | Требует приоритетной проверки. Обычно есть подозрительный путь, signer, script host или нестандартный механизм. |
-| `Medium` | Часто это нестандартная, но не обязательно вредоносная конфигурация. |
-| `Low` | Обычно baseline/inventory.|
-
----
-
-## Поддерживаемые persistence locations
-
-Скрипт реализует read-only checks для всех механизмов из `persistence-info`:
+The script implements read-only checks for the Windows persistence mechanisms listed by `persistence-info`, including:
 
 - `.chm helper DLL`
 - `.NET Startup Hooks`
@@ -239,32 +207,46 @@ C:\ProgramData\Microsoft\Windows Defender
 
 ---
 
-## Ограничения
 
-- Offline user hives не монтируются автоматически.
-- Некоторые механизмы, например WPBT, проверяются best-effort из Windows userland.
-- Risk scoring является эвристикой.
-- Скрипт не удаляет persistence и не выполняет remediation.
+
+## Limitations
+
+This tool is a local, read-only persistence audit helper. It is useful for inventory, triage, and baseline comparison, but it is not a full compromise assessment.
+
+Known limitations:
+
+- It checks only the local Windows host.
+- Offline user hives are not mounted automatically, so persistence in unloaded `NTUSER.DAT` files may be missed.
+- Firmware, UEFI/WPBT, bootkits, and pre-boot persistence are only checked best-effort or not fully visible from Windows userland.
+- Kernel-mode rootkits or API hooking can hide registry keys, files, services, tasks, or other artifacts from normal Windows APIs.
+- WMI permanent event subscriptions are not comprehensively covered unless implemented as a separate check.
+- Application-specific persistence is not fully covered: browser extensions, Office add-ins/macros, Outlook rules, IDE plugins, package manager hooks, etc.
+- Deleted or historical artifacts are not recovered. The script does not parse USN Journal, Amcache, ShimCache, Prefetch, SRUM, or registry transaction logs.
+- Scoring is heuristic. `Medium`, `High`, or `Critical` means “review first,” not “confirmed malicious.”
+- `Low` means lower priority, not guaranteed safe.
+- The script does not remediate anything. It does not delete, disable, quarantine, or modify persistence entries.
 
 ---
 
-## Безопасность
+## Safety
 
-Скрипт выполняет только read-only операции:
+The script only performs read-only actions:
 
-- чтение registry;
-- чтение scheduled tasks;
-- чтение service configuration;
-- чтение файловых метаданных;
-- проверка подписи;
-- расчёт SHA256;
-- экспорт локальных отчётов.
+- reads registry keys and values;
+- reads scheduled task definitions;
+- reads service configuration;
+- reads profile/config files;
+- checks file metadata;
+- checks signatures;
+- calculates SHA256;
+- writes reports.
 
-Он не создаёт, не изменяет и не удаляет persistence entries.
+It does not modify the system.
 
 ---
 
 ## Disclaimer
 
-Этот проект предназначен для защитного аудита и анализа конфигурации Windows.  
-Любые результаты scoring требуют ручной проверки. Наличие записи в review queue не означает компрометацию, а отсутствие high-risk findings не гарантирует отсутствие persistence.
+This project is intended for defensive security work and Windows configuration auditing.
+
+Use the results as investigation input, not as a final verdict. Always validate findings against your environment, installed software, baseline, and telemetry.
